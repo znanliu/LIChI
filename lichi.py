@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat
-
+from npls_sps import npls_sps
 class LIChI(nn.Module):
     """ A PyTorch module implementing LIChI denoising algorithm. """
     
@@ -16,7 +16,24 @@ class LIChI(nn.Module):
         """ Initializes the LIChI module and sets default parameters. """
         super(LIChI, self).__init__()
         self.set_parameters()
-        
+
+    # def npls_sps_groupwise(self, Z, niter=80, beta=16, delta=0.5):
+    #     """
+    #     Applies npls_sps denoising groupwise to tensor of shape (N, B, k, n).
+    #     Assumes each patch is square and can be reshaped to 2D.
+    #     """
+    #     N, B, k, n = Z.shape
+    #     p = int(n**0.5)
+    #     assert p * p == n, "Patch must be square"
+
+    #     Z_hat = torch.empty_like(Z)
+    #     for ni in range(N):
+    #         for bi in range(B):
+    #             for ki in range(k):
+    #                 patch = Z[ni, bi, ki].cpu().numpy().reshape(p, p)
+    #                 patch_denoised = npls_sps(patch, niter=niter, beta=beta, delta=delta)
+    #                 Z_hat[ni, bi, ki] = torch.tensor(patch_denoised.reshape(-1), device=Z.device)
+    #     return Z_hat
     def set_parameters(self, sigma=25.0, constraints='affine', method='n2n',
                         p1=11, p2=6, k1=16, k2=64, w=65, s=3, M=9):
         """
@@ -86,6 +103,7 @@ class LIChI(nn.Module):
         v = w // 2
         input_x_pad = F.pad(input_x, [v]*4, mode='constant', value=float('nan'))
         N, C, H, W = input_x.size() 
+        
         Href, Wref = -((H - p + 1) // -s), -((W - p + 1) // -s) # ceiling division, represents the number of reference patches along each axis for unfold with stride=s
         ind_H_ref = torch.arange(0, H-p+1, step=s, device=input_x.device)      
         ind_W_ref = torch.arange(0, W-p+1, step=s, device=input_x.device)
@@ -157,7 +175,18 @@ class LIChI(nn.Module):
             weights_sum[i, :, :].index_add_(1, indices[i, :], weights[i, :, :])
  
         return F.fold(X_sum, (H, W), p) / F.fold(weights_sum, (H, W), p)
-    
+    @staticmethod 
+    def safe_cholesky(Q, max_trials=5):
+        Q = 0.5 * (Q + Q.transpose(-1, -2))
+        eps = 1e-6
+        for i in range(max_trials):
+            try:
+                return torch.linalg.cholesky(Q)
+            except RuntimeError as e:
+                print(f"{i}th trial")
+                Q = Q + eps * torch.eye(Q.size(-1), device=Q.device)
+                eps *= 10 
+        raise RuntimeError(f"{Q}Cholesky decomposition failed after multiple attempts.")
     def compute_theta(self, Q, D):
         """
         Computes the theta matrix based on the provided constraints.
@@ -170,9 +199,11 @@ class LIChI(nn.Module):
             torch.Tensor: Theta matrix, shape (N, B, k, k).
         """
         N, B, k, _ = Q.size()
+ 
         if self.constraints == 'linear' or self.constraints == 'affine':
             Ik = torch.eye(k, dtype=Q.dtype, device=Q.device).expand(N, B, -1, -1)
-            L = torch.linalg.cholesky(Q)
+            # L = torch.linalg.cholesky(Q)
+            L = self.safe_cholesky(Q)
             Qinv = torch.cholesky_solve(Ik, L)
             if self.constraints == 'linear':
                 theta = Ik - Qinv * D.unsqueeze(-1)
@@ -243,6 +274,7 @@ class LIChI(nn.Module):
         xi = self.compute_theta(Q, D)
         X_hat = xi @ Z
         Z_hat = (1 - tau/t) * X_hat + tau/t * Z
+        # Z_hat = self.npls_sps_groupwise(Z, niter=80, beta=16, delta=0.5)
         weights = 1 / torch.sum(xi**2, dim=3, keepdim=True).clip(min=1/k)
         return X_hat, Z_hat, weights
          
