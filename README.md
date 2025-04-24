@@ -1,5 +1,22 @@
 # Linear Combinations of Patches Are Unreasonably Effective for Single-Image Denoising (IEEE TIP'24)
-Sébastien Herbreteau and Charles Kervrann
+Project team:  Wenxin Hu, Yaoxin Li, Zhongnan Liu, Taewon Yang
+
+Fall25 EECS 556
+
+Extending on the work of Sébastien Herbreteau and Charles Kervrann
+
+## Project Organization
+### Extensions:
+### 1.  Comparing the performance with LR, LLR and DIP methods
+- [denoising_methods.py](./denoising_methods.py)
+
+- [U-net.ipynb](./U-net.ipynb)
+### 2.  Overcoming LIChI limitations
+- [extension_tw.ipynb](./extension_tw.ipynb)
+### 3.  Patch-based Denoising in Frequency Domain
+- [frequency_hybrid_lichi_selina.ipynb](./frequency_hybrid_lichi_selina.ipynb): README, code, and plots. Requirements specified within the code.
+### 4.  Application on 3D Medical Data
+- [lichi3d.py](./lichi3d.py)
 
 ## Requirements
 
